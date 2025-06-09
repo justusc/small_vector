@@ -1,0 +1,3 @@
+[submodule "external/deferral"]
+	path = external/deferral
+	url = git@github.com:justusc/deferral.git
