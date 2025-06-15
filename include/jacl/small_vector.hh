@@ -153,10 +153,11 @@ using remove_restrict_t = typename remove_restrict<ptrT>::type;
  */
 template <typename valueT, size_t sizeN, typename allocT = std::allocator<valueT>>
 class small_vector : public allocT {
+  using allocator_traits = std::allocator_traits<allocT>;
+
 public:
   using value_type             = valueT;
   using allocator_type         = allocT;
-  using allocator_traits       = std::allocator_traits<allocator_type>;
   using reference              = value_type&;
   using const_reference        = const value_type&;
   using size_type              = typename allocator_traits::size_type;
