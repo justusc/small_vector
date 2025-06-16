@@ -583,9 +583,12 @@ public:
     return *this;
   }
 
-  small_vector& operator=(small_vector&& other) noexcept(
-      allocator_type::propagate_on_container_move_assignment::value ||
-      allocator_type::is_always_equal::value) {
+  small_vector& operator=(small_vector&& other)
+#if __cplusplus >= 201703L
+      noexcept(allocator_traits::propagate_on_container_move_assignment::value ||
+               allocator_traits::is_always_equal::value)
+#endif // __cplusplus >= 201703L
+  {
     // Destroy existing elements to make room for the new elements.
 
     JACL_IF_CONSTEXPR(allocator_traits::propagate_on_container_move_assignment::value) {
