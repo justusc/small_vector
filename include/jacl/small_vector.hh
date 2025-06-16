@@ -446,21 +446,22 @@ private:
   }
 
   void move_internal(small_vector&& other) {
+    clear();
+
     if(other.is_heap_allocated()) {
+      deallocate(data_, capacity());
+
       // Take ownership of the heap-allocated data from the other vector.
-      data_     = other.data_;
-      size_     = other.size_;
+      data_     = std::exchange(other.data_, reinterpret_cast<pointer>(other.inline_data_));
       capacity_ = other.capacity_;
     } else {
       // Copy into the existing buffer. `other` is using inline data, so this
       // vecor is guaranteed to have enough capacity.
       move_data(data_, other.data_, other.size_);
-      size_ = other.size_;
+      other.data_ = reinterpret_cast<pointer>(other.inline_data_);
     }
 
-    // Reset the other vector.
-    other.data_ = reinterpret_cast<pointer>(other.inline_data_);
-    other.size_ = 0;
+    size_ = std::exchange(other.size_, 0);
   }
 
   template <typename... argTs>
@@ -568,7 +569,7 @@ public:
       if(allocator() != other.allocator()) {
         clear();
         deallocate(data_, capacity_);
-        data_       = static_cast<pointer>(inline_data_);
+        data_       = reinterpret_cast<pointer>(inline_data_);
         allocator() = other.allocator();
       }
     }
@@ -590,7 +591,7 @@ public:
       if(allocator() != other.allocator()) {
         clear();
         deallocate(data_, capacity_);
-        data_       = static_cast<pointer>(inline_data_);
+        data_       = reinterpret_cast<pointer>(inline_data_);
         allocator() = std::move(other.allocator());
       }
     }
