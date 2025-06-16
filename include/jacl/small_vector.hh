@@ -197,6 +197,8 @@ private:
     internal_size_type capacity_;
   };
 
+  static_assert(sizeN > 0, "small_vector: sizeN must be greater than 0");
+
   static constexpr bool value_is_trivially_move_assignable =
       std::is_trivially_move_assignable<value_type>::value;
   static constexpr bool value_is_trivially_move_constructible =
