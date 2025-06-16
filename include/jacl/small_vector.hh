@@ -431,8 +431,7 @@ private:
     size_ = cb(new_data);
 
     std::swap(data_, new_data);
-    capacity_    = new_capacity;
-    new_capacity = cur_cap;
+    capacity_ = std::exchange(new_capacity, cur_cap);
   }
 
   template <typename callbackT>
