@@ -474,7 +474,8 @@ private:
 
   template <typename iterT>
   void assign_iter(iterT first, iterT last, internal_size_type cur_cap) {
-    JACL_IF_CONSTEXPR(std::is_base_of<std::random_access_iterator_tag, iterT>::value) {
+    JACL_IF_CONSTEXPR(std::is_base_of<std::random_access_iterator_tag,
+        typename std::iterator_traits<iterT>::iterator_category>::value) {
       size_t sz = std::distance(first, last);
       assign_internal(sz, cur_cap, [&](pointer JACL_RESTRICT dest) {
         size_type i = 0;
@@ -612,7 +613,8 @@ public:
         std::is_constructible<value_type, typename std::iterator_traits<iterT>::reference>::value,
         "small_vector::assign: value type is not constructible from the "
         "dereferenced iterator type");
-    static_assert(!std::is_base_of<std::output_iterator_tag, iterT>::value,
+    static_assert(!std::is_base_of<std::output_iterator_tag,
+                      typename std::iterator_traits<iterT>::iterator_category>::value,
         "small_vector::assign: output iterators are not allowed");
     assign_iter(first, last, capacity());
   }
