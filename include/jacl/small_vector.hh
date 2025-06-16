@@ -180,7 +180,11 @@ public:
    * previously heap-allocated and then resized to a size less than or equal to
    * `extent`.
    */
-  static constexpr size_t extent = sizeN;
+#if __cplusplus >= 201703L
+  static constexpr size_type extent = sizeN;
+#else
+  enum { extent = sizeN };
+#endif // __cplusplus >= 201703L
 
 private:
   using this_type          = small_vector<valueT, sizeN, allocT>;
