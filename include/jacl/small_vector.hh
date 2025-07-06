@@ -961,7 +961,6 @@ public:
       }
 
       std::swap(l.size_, r.size_);
-      swap_allocator(l, r);
     };
 
     auto swap_heap_x_inline = [&](small_vector& l, small_vector& r) {
@@ -992,10 +991,12 @@ public:
     case 0x1:
       // `this` is heap-allocated and `other` is inline.
       swap_heap_x_inline(*this, other);
+      swap_allocator(*this, other);
       break;
     case 0x2:
       // `this` is inline, `other` is heap-allocated.
       swap_heap_x_inline(other, *this);
+      swap_allocator(*this, other);
       break;
     case 0x3:
       // Both are heap-allocated, swap the members.
