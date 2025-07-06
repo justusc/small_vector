@@ -155,6 +155,10 @@ template <typename valueT, size_t sizeN, typename allocT = std::allocator<valueT
 class small_vector : public allocT {
   using allocator_traits = std::allocator_traits<allocT>;
 
+  static_assert(sizeN > 0, "small_vector: sizeN must be greater than 0");
+  static_assert(std::is_same<valueT, typename std::allocator_traits<allocT>::value_type>::value,
+      "small_vector: valueT must be the same as the allocator's value_type");
+
 public:
   using value_type             = valueT;
   using allocator_type         = allocT;
@@ -196,8 +200,6 @@ private:
     alignas(value_type) uint8_t inline_data_[sizeof(value_type) * sizeN];
     internal_size_type capacity_;
   };
-
-  static_assert(sizeN > 0, "small_vector: sizeN must be greater than 0");
 
   static constexpr bool value_is_trivially_move_assignable =
       std::is_trivially_move_assignable<value_type>::value;
