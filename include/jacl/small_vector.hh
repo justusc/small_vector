@@ -408,7 +408,10 @@ private:
     else {
       internal_size_type i = 0;
       defer_fail { destroy_n(dest, i); };
-      for(; i < n; ++i) { construct_at(dest + i, std::move(src[i])); }
+      for(; i < n; ++i) {
+        construct_at(dest + i, std::move(src[i]));
+        destroy_at(src + i);
+      }
     }
   }
 
@@ -905,7 +908,6 @@ public:
     if(size_ < static_capacity && cur_cap > static_capacity) {
       // Shrink to inline data.
       move_data(inline_data_, data_, size_);
-      destroy_n(data_, size_);
       deallocate(data_, cur_cap);
       data_     = reinterpret_cast<pointer>(inline_data_);
       capacity_ = static_capacity;
