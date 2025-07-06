@@ -401,8 +401,9 @@ private:
   }
 
   template <typename callbackT>
-  void alloc_assign_internal(internal_size_type sz, internal_size_type cur_cap, callbackT&& cb) {
-    auto alloc_result      = allocate(sz);
+  void alloc_assign_internal(
+      internal_size_type req_cap, internal_size_type cur_cap, callbackT&& cb) {
+    auto alloc_result      = allocate(req_cap);
     pointer new_data       = alloc_result.first;
     size_type new_capacity = alloc_result.second;
     defer {
