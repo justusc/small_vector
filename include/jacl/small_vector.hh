@@ -317,7 +317,7 @@ private:
       move_data_backwards(src_last + n, src_last, src_last - src_first);
 
       // Construct the new elements.
-      construct_cb(src_first, n);
+      construct_cb(src_first);
     } else {
       // Handle cases where we need to allocate a new buffer.
       const internal_size_type new_cap = grow_cb(size_, new_size);
@@ -325,7 +325,7 @@ private:
       const size_type hi_size          = size_ - lo_size;
       alloc_assign_internal(new_cap, cur_cap, [&](pointer dest) {
         pointer dest_position = dest + lo_size;
-        construct_cb(dest_position, n);
+        construct_cb(dest_position);
         move_data(dest, data_, lo_size);
         move_data(dest_position + n, position, hi_size);
         position = dest_position;
@@ -334,19 +334,6 @@ private:
     }
 
     return const_cast<iterator>(position);
-  }
-
-  template <typename construct_cbT>
-  iterator insert_grow(const_iterator position, size_type n, construct_cbT&& construct_cb) {
-    return insert_impl(position, n, construct_cb, [](size_type cur_size, size_type min_size) {
-      return std::min(std::max(cur_size + (cur_size >> 1) + 1, min_size), max_size());
-    });
-  }
-
-  template <typename construct_cbT>
-  iterator insert_n(const_iterator position, size_type n, construct_cbT&& construct_cb) {
-    return insert_impl(
-        position, n, construct_cb, [](size_type, size_type min_size) { return min_size; });
   }
 
   void copy_data(
@@ -444,14 +431,6 @@ private:
     }
 
     size_ = std::exchange(other.size_, 0);
-  }
-
-  template <typename... argTs>
-  void fill_internal(internal_size_type sz, internal_size_type cur_cap, argTs&&... args) {
-    assign_internal(sz, cur_cap, [&](pointer JACL_RESTRICT dest) {
-      fill_data(dest, sz, std::forward<argTs>(args)...);
-      return sz;
-    });
   }
 
   template <typename iterT>
@@ -730,7 +709,12 @@ public:
     assign_iter(first, last, capacity());
   }
 
-  void assign(size_type sz, const value_type& val) { fill_internal(sz, capacity(), val); }
+  void assign(size_type sz, const value_type& val) {
+    assign_internal(sz, capacity(), [&](pointer JACL_RESTRICT dest) {
+      fill_data(dest, sz, val);
+      return sz;
+    });
+  }
 
   void assign(std::initializer_list<value_type> il) { assign(il.begin(), il.end()); }
 
@@ -827,17 +811,20 @@ public:
 
   template <typename... Args>
   iterator emplace(const_iterator position, Args&&... args) {
-    return insert_grow(position, 1, [&](pointer JACL_RESTRICT const p, const size_type) {
-      construct_at(p, std::forward<Args>(args)...);
-    });
+    return insert_impl(
+        position, 1,
+        [&](pointer JACL_RESTRICT const p) { construct_at(p, std::forward<Args>(args)...); },
+        [](size_type cur_size, size_type min_size) {
+          return std::min(std::max(cur_size + (cur_size >> 1) + 1, min_size), max_size());
+        });
   }
 
   template <typename iterT>
   iterator insert(const_iterator position, iterT first, iterT last) {
-    return insert_n(position, std::distance(first, last),
-        [&](pointer JACL_RESTRICT const p, size_type /* n */) {
-          std::uninitialized_copy(first, last, p);
-        });
+    return insert_impl(
+        position, std::distance(first, last),
+        [&](pointer JACL_RESTRICT const p) { std::uninitialized_copy(first, last, p); },
+        [](size_type, size_type min_size) { return min_size; });
   }
 
   iterator insert(const_iterator position, std::initializer_list<value_type> il) {
