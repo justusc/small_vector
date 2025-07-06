@@ -853,16 +853,12 @@ public:
   iterator erase(const_iterator first, const_iterator last) {
     if(first == last) return const_cast<iterator>(first);
 
-    pointer JACL_RESTRICT const f = const_cast<pointer>(first);
-    pointer JACL_RESTRICT const l = const_cast<pointer>(last);
-    pointer JACL_RESTRICT const e = data_ + size_;
-    size_type n                   = std::distance(f, l);
-    destroy_n(f, n);
+    const auto sz = internal_size_type(std::distance(first, last));
+    destroy_n(first, sz);
+    move_data(first, last, sz);
+    size_ -= sz;
 
-    std::move(l, e, f);
-    size_ -= n;
-
-    return f;
+    return first;
   }
 
   void clear() noexcept {
