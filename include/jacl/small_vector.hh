@@ -311,50 +311,10 @@ private:
 
     if(new_size <= cur_cap) {
       // Handle cases where the new size fits in the current capacity.
+      pointer src_first = const_cast<pointer>(position);
+      pointer src_last  = end();
 
-      // Set pointers for source and destination ranges, and the number of
-      // elements to move. All offsets are relative to these two pointers, so
-      // the source and destination ranges are [src, src + move_cnt) and [dest,
-      // dest + move_cnt), respectively. These ranges may overlap.
-      pointer JACL_RESTRICT const src_first = const_cast<pointer>(position);
-      pointer JACL_RESTRICT src_last        = cend();
-      pointer JACL_RESTRICT const dest      = const_cast<pointer>(position) + n;
-      const internal_size_type move_cnt     = src_last - position;
-
-      JACL_IF_CONSTEXPR(
-          value_is_trivially_move_assignable && value_is_trivially_move_constructible) {
-        std::memmove(dest, src_first, move_cnt * sizeof(value_type));
-      }
-      else if(dest < src_last) {
-        // source and destination ranges overlap.
-
-        // Move data in two stages:
-        //  1. Non-overlapping elements past the end that are to be moved past
-        //  the end
-        //  2. Overlapping elements within the original vector extent (in
-        //  reverse order)
-        pointer JACL_RESTRICT const src_mid  = src_last - n;
-        dest                                += move_cnt;
-
-        while(src_last != src_mid) {
-          --src_last;
-          --dest;
-          construct_at(dest, std::move(*src_last));
-        }
-        while(src_last != src_first) {
-          --src_last;
-          --dest;
-          *dest = std::move(*src_last);
-          destroy_at(src_last);
-        }
-      }
-      else {
-        // source and destination ranges do not overlap.
-        for(; src_first != src_last; ++src_first, ++dest) {
-          construct_at(dest, std::move(*src_first));
-          destroy_at(src_first);
-        }
-      }
+      move_data_backwards(src_last + n, src_last, src_last - src_first);
 
       // Construct the new elements.
       construct_cb(src_first, n);
@@ -411,6 +371,23 @@ private:
       for(; i < n; ++i) {
         construct_at(dest + i, std::move(src[i]));
         destroy_at(src + i);
+      }
+    }
+  }
+
+  void move_data_backwards(
+      pointer JACL_RESTRICT dest, pointer JACL_RESTRICT src, internal_size_type n) {
+    JACL_IF_CONSTEXPR(value_is_trivially_move_constructible && value_is_trivially_destructible) {
+      std::memmove(dest, src, n * sizeof(value_type));
+    }
+    else {
+      internal_size_type i = n;
+      defer_fail { destroy_n(dest, n); };
+      while(i-- > 0) {
+        --dest;
+        --src;
+        construct_at(dest, std::move(*src));
+        destroy_at(src);
       }
     }
   }
