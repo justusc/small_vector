@@ -6,6 +6,8 @@
 - API closely matches `std::vector` (iterators, `push_back`, `emplace_back`, etc.).
 - Supports all major C++ standards from C++11 to C++20.
 - Provides efficient memory usage and performance for small and large collections.
+- Optimize data move and copy operations to skip construction/destruction of
+  trivial types (e.g. `int`, `char`, `void*`, _etc._).
 
 **Example Usage:**
 ```cpp
