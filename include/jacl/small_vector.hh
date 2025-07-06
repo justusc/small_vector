@@ -883,8 +883,7 @@ public:
       // Shrink to inline data.
       move_data(inline_data_, data_, size_);
       deallocate(data_, cur_cap);
-      data_     = reinterpret_cast<pointer>(inline_data_);
-      capacity_ = static_capacity;
+      data_ = reinterpret_cast<pointer>(inline_data_);
     } else if(size_ != cur_cap) {
       // Shrink to new allocation.
       alloc_assign_internal(size_, cur_cap, [&](pointer JACL_RESTRICT const dest) {
