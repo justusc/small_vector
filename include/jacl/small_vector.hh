@@ -439,10 +439,10 @@ private:
         typename std::iterator_traits<iterT>::iterator_category>::value) {
       size_t sz = std::distance(first, last);
       assign_internal(sz, cur_cap, [&](pointer JACL_RESTRICT dest) {
-        size_type i = 0;
+        size_t i = 0;
         defer_fail { destroy_n(dest, i); };
         for(; i < sz; ++i) construct_at(dest + i, *first++);
-        return i;
+        return sz;
       });
     }
     else {
@@ -804,7 +804,7 @@ public:
   }
 
   void pop_back() {
-    const size_type offset = size_ - 1;
+    const internal_size_type offset = size_ - 1;
     destroy_at(data_ + offset);
     size_ = offset;
   }
