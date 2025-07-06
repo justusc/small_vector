@@ -494,10 +494,25 @@ private:
 
 public:
   /**
-   * @brief The static capacity of the small vector.
+   * @brief Default constructor for small_vector.
+   *
+   * Constructs an empty small_vector with no elements. The container will use
+   * the inline storage initially and only allocate dynamic memory when the
+   * number of elements exceeds the inline capacity.
+   *
+   * @note This constructor is noexcept if the allocator's default constructor
+   *       is noexcept.
    */
   small_vector() noexcept(std::is_nothrow_default_constructible<allocator_type>::value) = default;
 
+  /**
+   * @brief Constructs an empty small_vector with the given allocator.
+   *
+   * Creates a small_vector with no elements, using the specified allocator
+   * for memory management operations.
+   *
+   * @param a The allocator to use for memory allocation and deallocation
+   */
   explicit small_vector(const allocator_type& a) noexcept(
       std::is_nothrow_copy_constructible<allocator_type>::value) : allocator_type{a} {}
 
@@ -513,6 +528,20 @@ public:
     });
   }
 
+  /**
+   * @brief Constructs a small_vector with a specified size and value.
+   *
+   * Creates a small_vector with `n` elements, each initialized to the provided value.
+   *
+   * If `n` is less than or equal to the static capacity, the elements are stored in the inline
+   * storage of the small_vector.
+   *
+   * @param n The number of elements to create
+   * @param value The value to initialize each element with
+   * @param a Allocator instance to use for memory allocation (default constructed if not provided)
+   *
+   * @throws May throw if the allocator copy constructor throws, otherwise noexcept
+   */
   small_vector(size_type n, const value_type& value,
       const allocator_type& a =
           allocator_type{}) noexcept(std::is_nothrow_copy_constructible<allocator_type>::value) :
@@ -523,6 +552,22 @@ public:
     });
   }
 
+  /**
+   * @brief Constructs a small_vector from a range of iterators.
+   *
+   * Creates a small_vector by copying elements from the range [first, last).
+   * The iterator type must satisfy the requirements of at least an input iterator.
+   *
+   * If the number of elements in the range is less than or equal to the static
+   * capacity, the elements are stored in the inline storage of the small_vector.
+   *
+   * @tparam iterT Iterator type
+   * @param first Iterator to the beginning of the range to copy from
+   * @param last Iterator to the end of the range to copy from
+   * @param a Allocator instance to use for memory allocation (default constructed if not provided)
+   *
+   * @throws May throw if the allocator copy constructor throws, otherwise noexcept
+   */
   template <typename iterT,
       typename = typename std::enable_if<std::is_base_of<std::input_iterator_tag,
           typename std::iterator_traits<iterT>::iterator_category>::value>::type>
@@ -531,6 +576,21 @@ public:
     assign_iter(first, last, static_capacity);
   }
 
+  /**
+   * @brief Copy constructor for small_vector.
+   *
+   * Creates a new small_vector by copying all elements from another small_vector.
+   * The allocator is obtained using allocator_traits::select_on_container_copy_construction
+   * to allow for proper allocator propagation during copy construction.
+   *
+   * If the size of the other small_vector is less than or equal to the static capacity,
+   * the elements are copied into the inline storage of the new small_vector.
+   *
+   * @param other The small_vector to copy from
+   *
+   * @note This constructor is noexcept if both the value_type and allocator_type
+   *       have nothrow copy constructors.
+   */
   small_vector(const small_vector& other) noexcept(
       std::is_nothrow_copy_constructible<value_type>::value &&
       std::is_nothrow_copy_constructible<allocator_type>::value) :
@@ -541,17 +601,61 @@ public:
     });
   }
 
+  /**
+   * @brief Move constructor for small_vector.
+   *
+   * Constructs a new small_vector by moving the contents from another small_vector.
+   * The source vector is left in a default constructed state.
+   * The allocator is move-constructed from the source vector's allocator.
+   *
+   * If `other` is heap-allocated, the data pointer and capacity are transferred to the new vector.
+   * Otherwise, an element-wise move is performed from the source vector's inline storage to the new
+   * vector's inline storage.
+   *
+   * @param other The source small_vector to move from
+   *
+   * @note This constructor is noexcept if the allocator's move constructor is noexcept
+   *
+   * @complexity Linear with the number of elements in `other` if moving from inline storage.
+   * Otherwise constant time if moving from heap storage.
+   */
   small_vector(small_vector&& other) noexcept(
       std::is_nothrow_move_constructible<allocator_type>::value) :
       allocator_type{std::move(static_cast<allocator_type&>(other))} {
     move_internal(std::move(other));
   }
 
+  /**
+   * @brief Constructs a small_vector from an initializer list.
+   *
+   * Creates a small_vector containing copies of the elements in the given
+   * initializer list. The elements are inserted in the same order as they
+   * appear in the initializer list.
+   *
+   * @param il The initializer list containing elements to copy into the container
+   *
+   * @exception No-throw guarantee if both value_type and allocator_type are
+   *            nothrow copy constructible, otherwise may throw any exception
+   *            thrown by the copy constructor of value_type or allocator_type
+   *
+   * @note This constructor allows syntax like: small_vector<int> v = {1, 2, 3, 4};
+   */
   small_vector(std::initializer_list<value_type> il) noexcept(
       std::is_nothrow_copy_constructible<value_type>::value &&
       std::is_nothrow_copy_constructible<allocator_type>::value) :
       small_vector{il.begin(), il.end(), allocator_type{}} {}
 
+  /**
+   * @brief Constructs a small_vector from an initializer list with a custom allocator.
+   *
+   * Creates a small_vector containing copies of the elements in the initializer list,
+   * using the specified allocator for memory management.
+   *
+   * @param il The initializer list containing elements to copy into the container
+   * @param a The allocator instance to use for memory allocation
+   *
+   * @throws No exceptions if both value_type and allocator_type are nothrow copy constructible
+   */
   small_vector(std::initializer_list<value_type> il, const allocator_type& a) noexcept(
       std::is_nothrow_copy_constructible<value_type>::value &&
       std::is_nothrow_copy_constructible<allocator_type>::value) :
@@ -562,6 +666,20 @@ public:
     deallocate(data_, capacity_);
   }
 
+  /**
+   * @brief Copy assignment operator.
+   *
+   * Copies the contents of `other` into this vector, replacing its current contents. If the
+   * current capacity is not sufficient to hold the new elements, a new buffer is allocated.
+   *
+   * If `allocator_traits::propagate_on_container_copy_assignment` is true and
+   * the allocators of this and `other` are different, the allocator of `other` is copied to this
+   * vector. This will result existing memory being deallocated and reallocated with the new
+   * allocator.
+   *
+   * @param other The small_vector to copy from
+   * @return Reference to this small_vector after assignment
+   */
   small_vector& operator=(const small_vector& other) {
     if(this == &other) return *this;
 
@@ -582,6 +700,20 @@ public:
     return *this;
   }
 
+  /**
+   * @brief Move assignment operator for small_vector.
+   *
+   * Move the content of `other` into this small_vector, replacing its current contents.
+   * If `other` is heap-allocated, its data pointer and capacity are transferred to this vector.
+   * Otherwise,
+
+   * The other small_vector is left in a valid but unspecified state after the operation.
+   * If the current vector has sufficient capacity, elements are moved directly.
+   * Otherwise, memory may be reallocated to accommodate the moved elements.
+   *
+   * @param other The small_vector to move from
+   * @return Reference to this small_vector after the move assignment
+   */
   small_vector& operator=(small_vector&& other)
 #if __cplusplus >= 201703L
       noexcept(allocator_traits::propagate_on_container_move_assignment::value ||
