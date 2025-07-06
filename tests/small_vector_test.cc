@@ -690,12 +690,12 @@ TEST_F(SmallVectorTest, MoveAssignmentWithStaticToDynamicMemory) {
 
   vec2 = std::move(vec1);
   EXPECT_EQ(vec2.size(), 3);
-  EXPECT_GE(vec2.capacity(), vec2.extent);
+  EXPECT_GE(vec2.capacity(), vec2.static_capacity);
   for(std::size_t i = 0; i < 3; ++i) { EXPECT_EQ(vec2[i], vec1_copy[i]); }
 
   EXPECT_TRUE(vec1.empty());
   EXPECT_EQ(vec1.size(), 0);
-  EXPECT_EQ(vec1.capacity(), vec1.extent);
+  EXPECT_EQ(vec1.capacity(), vec1.static_capacity);
 
   // One deallocation should occur (vec2's original memory)
   EXPECT_EQ(AllocationStats::allocation_count(), 1);
@@ -719,7 +719,7 @@ TEST_F(SmallVectorTest, MoveAssignmentWithDynamicToStaticMemory) {
 
   EXPECT_TRUE(vec1.empty());
   EXPECT_EQ(vec1.size(), 0);
-  EXPECT_EQ(vec1.capacity(), vec1.extent);
+  EXPECT_EQ(vec1.capacity(), vec1.static_capacity);
 
   // No deallocation should occur since vec2 is static memory
   EXPECT_EQ(AllocationStats::allocation_count(), 1);
@@ -740,7 +740,7 @@ TEST_F(SmallVectorTest, MoveAssignmentWithStaticToStaticMemory) {
 
   EXPECT_TRUE(vec1.empty());
   EXPECT_EQ(vec1.size(), 0);
-  EXPECT_EQ(vec1.capacity(), vec1.extent);
+  EXPECT_EQ(vec1.capacity(), vec1.static_capacity);
 
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
   EXPECT_EQ(AllocationStats::deallocation_count(), 0);
@@ -770,7 +770,7 @@ TEST_F(SmallVectorTest, MoveAssignmentWithDynamicToDynamicMemory) {
 
   EXPECT_TRUE(vec1.empty());
   EXPECT_EQ(vec1.size(), 0);
-  EXPECT_EQ(vec1.capacity(), vec1.extent);
+  EXPECT_EQ(vec1.capacity(), vec1.static_capacity);
 
   // One deallocation should occur (vec2's original memory)
   EXPECT_EQ(AllocationStats::allocation_count(), 2);
@@ -1024,10 +1024,10 @@ TEST_F(SmallVectorTest, ReserveWithStaticMemory) {
 TEST_F(SmallVectorTest, Reserve) {
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec{1, 2};
 
-  for(size_t i = 0; i < vec.extent; ++i) {
+  for(size_t i = 0; i < vec.static_capacity; ++i) {
     vec.reserve(i);
     EXPECT_EQ(vec.size(), 2);
-    EXPECT_GE(vec.capacity(), vec.extent);
+    EXPECT_GE(vec.capacity(), vec.static_capacity);
     EXPECT_EQ(vec[0], 1);
     EXPECT_EQ(vec[1], 2);
 
@@ -1037,7 +1037,7 @@ TEST_F(SmallVectorTest, Reserve) {
   }
 
   // Reserve more than current capacity
-  for(size_t i = vec.extent + 1; i < 10; ++i) {
+  for(size_t i = vec.static_capacity + 1; i < 10; ++i) {
     size_t cur_capacity      = vec.capacity();
     size_t cur_alloc_count   = AllocationStats::allocation_count();
     size_t cur_dealloc_count = AllocationStats::deallocation_count();

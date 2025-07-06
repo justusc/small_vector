@@ -185,9 +185,9 @@ public:
    * `extent`.
    */
 #if __cplusplus >= 201703L
-  static constexpr size_type extent = sizeN;
+  static constexpr size_type static_capacity = sizeN;
 #else
-  enum { extent = sizeN };
+  enum { static_capacity = sizeN };
 #endif // __cplusplus >= 201703L
 
 private:
@@ -496,8 +496,6 @@ public:
   /**
    * @brief The static capacity of the small vector.
    */
-  static constexpr size_type static_capacity = sizeN;
-
   small_vector() noexcept(std::is_nothrow_default_constructible<allocator_type>::value) = default;
 
   explicit small_vector(const allocator_type& a) noexcept(
