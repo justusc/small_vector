@@ -402,7 +402,7 @@ private:
   }
 
   void move_data(pointer JACL_RESTRICT dest, pointer JACL_RESTRICT src, internal_size_type n) {
-    JACL_IF_CONSTEXPR(value_is_trivially_move_constructible && value_is_trivially_move_assignable) {
+    JACL_IF_CONSTEXPR(value_is_trivially_move_constructible && value_is_trivially_destructible) {
       std::memcpy(dest, src, n * sizeof(value_type));
     }
     else {
