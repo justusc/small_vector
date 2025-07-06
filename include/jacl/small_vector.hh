@@ -497,12 +497,8 @@ public:
   explicit small_vector(const allocator_type& a) noexcept(
       std::is_nothrow_copy_constructible<allocator_type>::value) : allocator_type{a} {}
 
-  explicit small_vector(size_type n) noexcept(
-      std::is_nothrow_default_constructible<value_type>::value &&
-      std::is_nothrow_default_constructible<allocator_type>::value) :
-      small_vector{n, allocator_type{}} {}
-
-  explicit small_vector(size_type n, const allocator_type& a) : allocator_type{a} {
+  explicit small_vector(size_type n, const allocator_type& a = allocator_type{}) :
+      allocator_type{a} {
     assign_internal(n, static_capacity, [&](pointer JACL_RESTRICT dest) {
       fill_data(dest, n);
       return n;
