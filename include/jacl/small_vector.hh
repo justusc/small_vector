@@ -640,7 +640,7 @@ public:
     if(this == &other) return *this;
 
     JACL_IF_CONSTEXPR(allocator_traits::propagate_on_container_copy_assignment::value) {
-      if(allocator() != other.allocator()) {
+      if(other.is_heap_allocated() && allocator() != other.allocator()) {
         clear();
         deallocate(data_, capacity_);
         data_       = reinterpret_cast<pointer>(inline_data_);
