@@ -6,6 +6,7 @@
 #include <list>
 #include <memory>
 #include <random>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -128,8 +129,9 @@ private:
   friend class InstrumentedAllocator;
 }; // class InstrumentedAllocator
 
-using alloc_stateful_int_t    = MockAllocator<int, StatefulPolicy>;
-using alloc_nonstateful_int_t = MockAllocator<int, NonstatefulPolicy>;
+using alloc_stateful_int_t        = MockAllocator<int, StatefulPolicy>;
+using alloc_nonstateful_int_t     = MockAllocator<int, NonstatefulPolicy>;
+using alloc_nonstateful_int_ptr_t = MockAllocator<std::unique_ptr<int>, NonstatefulPolicy>;
 
 class SmallVectorTest : public ::testing::Test {
 protected:
@@ -144,32 +146,36 @@ protected:
   }
 
   void SetUp() override { AllocationStats::reset_counters(); }
+
+  void TearDown() override {
+    // Ensure no memory leaks
+    EXPECT_EQ(AllocationStats::allocation_count(), AllocationStats::deallocation_count());
+    EXPECT_EQ(AllocationStats::total_allocated(), AllocationStats::total_deallocated());
+    EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
+  }
 }; // class SmallVectorTest
 
 TEST_F(SmallVectorTest, DefaultConstructor) {
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec;
+  EXPECT_NE(vec.data(), nullptr);
   EXPECT_EQ(vec.size(), 0);
   EXPECT_EQ(vec.capacity(), 4);
   EXPECT_TRUE(vec.empty());
+  EXPECT_THROW(vec.at(0), std::out_of_range);
+  EXPECT_EQ(vec.static_capacity, 4);
 
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_allocated(), 0);
-  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, AllocatorConstructor) {
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec(alloc_nonstateful_int_t{});
+  EXPECT_NE(vec.data(), nullptr);
   EXPECT_EQ(vec.size(), 0);
   EXPECT_EQ(vec.capacity(), 4);
   EXPECT_TRUE(vec.empty());
+  EXPECT_THROW(vec.at(0), std::out_of_range);
 
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_allocated(), 0);
-  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, InitializerListConstructorWithStaticMemory) {
@@ -177,15 +183,13 @@ TEST_F(SmallVectorTest, InitializerListConstructorWithStaticMemory) {
   EXPECT_EQ(vec.size(), 3);
   EXPECT_EQ(vec.capacity(), 4);
   EXPECT_FALSE(vec.empty());
-  EXPECT_EQ(vec[0], 1);
-  EXPECT_EQ(vec[1], 2);
-  EXPECT_EQ(vec[2], 3);
+  for(size_t i = 0; i < vec.size(); ++i) {
+    EXPECT_EQ(vec[i], i + 1);
+    EXPECT_EQ(vec.at(i), i + 1);
+  }
+  EXPECT_EQ(vec.data(), &vec[0]);
 
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_allocated(), 0);
-  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, InitializerListConstructorWithStaticMemoryAndAllocator) {
@@ -196,53 +200,45 @@ TEST_F(SmallVectorTest, InitializerListConstructorWithStaticMemoryAndAllocator) 
   EXPECT_EQ(vec.size(), 3);
   EXPECT_EQ(vec.capacity(), 4);
   EXPECT_FALSE(vec.empty());
-  EXPECT_EQ(vec[0], 1);
-  EXPECT_EQ(vec[1], 2);
-  EXPECT_EQ(vec[2], 3);
+  for(size_t i = 0; i < vec.size(); ++i) {
+    EXPECT_EQ(vec[i], i + 1);
+    EXPECT_EQ(vec.at(i), i + 1);
+  }
+  EXPECT_THROW(vec.at(10), std::out_of_range);
+  EXPECT_EQ(vec.data(), &vec[0]);
 
   // Ensure that the allocator was not used for small vector with static memory.
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_allocated(), 0);
-  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, InitializerListConstructorWithDynamicMemoryAndAllocator) {
-  {
-    jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec{
-        {1, 2, 3, 4, 5, 6},
-        alloc_nonstateful_int_t{}
-    };
-    EXPECT_EQ(vec.size(), 6);
-    EXPECT_GT(vec.capacity(), 4);
-    EXPECT_FALSE(vec.empty());
-    EXPECT_EQ(vec[0], 1);
-    EXPECT_EQ(vec[1], 2);
-    EXPECT_EQ(vec[2], 3);
-    EXPECT_EQ(vec[3], 4);
-    EXPECT_EQ(vec[4], 5);
-    EXPECT_EQ(vec[5], 6);
-
-    // Ensure that the allocator was used for small vector with dynamic memory.
-    EXPECT_EQ(AllocationStats::allocation_count(), 1);
-    EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-    EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-    EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-    EXPECT_GE(AllocationStats::outstanding_allocations(), 1);
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec{
+      {1, 2, 3, 4, 5, 6},
+      alloc_nonstateful_int_t{}
+  };
+  EXPECT_EQ(vec.size(), 6);
+  EXPECT_GT(vec.capacity(), 4);
+  EXPECT_FALSE(vec.empty());
+  for(size_t i = 0; i < vec.size(); ++i) {
+    EXPECT_EQ(vec[i], i + 1);
+    EXPECT_EQ(vec.at(i), i + 1);
   }
+  EXPECT_THROW(vec.at(vec.size()), std::out_of_range);
+  EXPECT_EQ(vec.data(), &vec[0]);
 
+  // Ensure that the allocator was used for small vector with dynamic memory.
   EXPECT_EQ(AllocationStats::allocation_count(), 1);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 1);
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
   EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-  EXPECT_GE(AllocationStats::total_deallocated(), 6 * sizeof(int));
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
+  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
+  EXPECT_GE(AllocationStats::outstanding_allocations(), 1);
 }
 
 TEST_F(SmallVectorTest, CopyConstructorWithStaticMemory) {
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> original;
   fill_with_random_data(original, 3);
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> copy(original);
+  EXPECT_NE(copy.data(), original.data());
   EXPECT_EQ(copy.size(), 3);
   EXPECT_EQ(copy.capacity(), 4);
   EXPECT_EQ(copy.get_allocator(), original.get_allocator());
@@ -255,7 +251,12 @@ TEST_F(SmallVectorTest, CopyConstructorWithStaticMemory) {
 TEST_F(SmallVectorTest, CopyConstructorWithDynamicMemory) {
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> original;
   fill_with_random_data(original, 6);
+  auto original_data = original.data();
+
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> copy(original);
+  EXPECT_EQ(original.data(), original_data);
+  EXPECT_NE(copy.data(), original_data);
+  EXPECT_NE(copy.data(), original.data());
   EXPECT_EQ(copy.size(), 6);
   EXPECT_GT(copy.capacity(), 4);
   EXPECT_EQ(copy.get_allocator(), original.get_allocator());
@@ -268,8 +269,11 @@ TEST_F(SmallVectorTest, CopyConstructorWithDynamicMemory) {
 TEST_F(SmallVectorTest, CopyConstructorWithStaticMemoryAndStatefulAllocator) {
   jacl::small_vector<int, 4, alloc_stateful_int_t> original{};
   fill_with_random_data(original, 3);
+  auto original_data = original.data();
 
   jacl::small_vector<int, 4, alloc_stateful_int_t> copy(original);
+  EXPECT_EQ(original.data(), original_data);
+  EXPECT_NE(copy.data(), original_data);
   EXPECT_EQ(copy.size(), 3);
   EXPECT_EQ(copy.capacity(), 4);
   EXPECT_NE(copy.get_allocator(), original.get_allocator());
@@ -277,51 +281,45 @@ TEST_F(SmallVectorTest, CopyConstructorWithStaticMemoryAndStatefulAllocator) {
 
   // No allocations should occur for static memory
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_allocated(), 0);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, CopyConstructorWithDynamicMemoryAndStatefulAllocator) {
-  {
-    jacl::small_vector<int, 4, alloc_stateful_int_t> original{};
-    for(int i = 1; i <= 6; ++i) { original.push_back(i); }
+  jacl::small_vector<int, 4, alloc_stateful_int_t> original{};
+  for(int i = 1; i <= 6; ++i) { original.push_back(i); }
+  auto original_data = original.data();
 
-    // Two allocations should occur: one for original, one for copy
-    EXPECT_EQ(AllocationStats::allocation_count(), 1);
-    EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-    EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-    EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-    EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
+  // Two allocations should occur: one for original, one for copy
+  EXPECT_EQ(AllocationStats::allocation_count(), 1);
+  EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
+  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
 
-    jacl::small_vector<int, 4, alloc_stateful_int_t> copy(original);
-    EXPECT_EQ(copy.size(), 6);
-    EXPECT_GT(copy.capacity(), 4);
-    EXPECT_NE(copy.get_allocator(), original.get_allocator());
-    for(std::size_t i = 0; i < original.size(); ++i) { EXPECT_EQ(copy[i], original[i]); }
+  jacl::small_vector<int, 4, alloc_stateful_int_t> copy(original);
+  EXPECT_EQ(original.data(), original_data);
+  EXPECT_NE(copy.data(), original_data);
+  EXPECT_EQ(copy.size(), 6);
+  EXPECT_GT(copy.capacity(), 4);
+  EXPECT_NE(copy.get_allocator(), original.get_allocator());
+  for(std::size_t i = 0; i < original.size(); ++i) { EXPECT_EQ(copy[i], original[i]); }
 
-    // New allocation for copy
-    EXPECT_EQ(AllocationStats::allocation_count(), 2);
-    EXPECT_GE(AllocationStats::total_allocated(), 2 * 6 * sizeof(int));
-    EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-    EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-    EXPECT_EQ(AllocationStats::outstanding_allocations(), 2);
-  }
-
-  // Both vectors destroyed, both allocations deallocated
+  // New allocation for copy
   EXPECT_EQ(AllocationStats::allocation_count(), 2);
   EXPECT_GE(AllocationStats::total_allocated(), 2 * 6 * sizeof(int));
-  EXPECT_EQ(AllocationStats::deallocation_count(), 2);
-  EXPECT_GE(AllocationStats::total_deallocated(), 2 * 6 * sizeof(int));
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
+  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 2);
 }
 
 TEST_F(SmallVectorTest, MoveConstructorWithStaticMemory) {
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> original;
   fill_with_random_data(original, 3);
+  auto original_data = original.data();
+
   std::vector<int> original_copy(original.begin(), original.end());
   jacl::small_vector<int, 4, alloc_nonstateful_int_t> moved(std::move(original));
+  EXPECT_EQ(original.data(), original_data);
+  EXPECT_NE(moved.data(), original_data);
   EXPECT_EQ(moved.size(), 3);
   EXPECT_EQ(moved.capacity(), 4);
   EXPECT_TRUE(original.empty());
@@ -330,46 +328,38 @@ TEST_F(SmallVectorTest, MoveConstructorWithStaticMemory) {
 
   // No allocations should occur for static memory
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_allocated(), 0);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, MoveConstructorWithDynamicMemory) {
-  {
-    jacl::small_vector<int, 4, alloc_nonstateful_int_t> original;
-    fill_with_random_data(original, 6);
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> original;
+  auto original_static_data = original.data();
+  fill_with_random_data(original, 6);
+  auto original_data = original.data();
+  EXPECT_NE(original_data, original_static_data);
 
-    // Allocations should occur for dynamic memory
-    EXPECT_EQ(AllocationStats::allocation_count(), 1);
-    EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-    EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-    EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-    EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
-
-    std::vector<int> original_copy(original.begin(), original.end());
-    jacl::small_vector<int, 4, alloc_nonstateful_int_t> moved(std::move(original));
-    EXPECT_EQ(moved.size(), 6);
-    EXPECT_GT(moved.capacity(), 4);
-    EXPECT_TRUE(original.empty());
-    EXPECT_EQ(moved.get_allocator(), original.get_allocator());
-    for(std::size_t i = 0; i < moved.size(); ++i) { EXPECT_EQ(moved[i], original_copy[i]); }
-
-    // No change in allocation stats after move
-    EXPECT_EQ(AllocationStats::allocation_count(), 1);
-    EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-    EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-    EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-    EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
-  }
-
-  // Memory should be deallocated when destoryed
+  // Allocations should occur for dynamic memory
   EXPECT_EQ(AllocationStats::allocation_count(), 1);
   EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-  EXPECT_EQ(AllocationStats::deallocation_count(), 1);
-  EXPECT_GE(AllocationStats::total_deallocated(), 6 * sizeof(int));
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
+  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
+
+  std::vector<int> original_copy(original.begin(), original.end());
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> moved(std::move(original));
+  EXPECT_EQ(original.data(), original_static_data);
+  EXPECT_EQ(moved.data(), original_data);
+  EXPECT_EQ(moved.size(), 6);
+  EXPECT_GT(moved.capacity(), 4);
+  EXPECT_TRUE(original.empty());
+  EXPECT_EQ(moved.get_allocator(), original.get_allocator());
+  for(std::size_t i = 0; i < moved.size(); ++i) { EXPECT_EQ(moved[i], original_copy[i]); }
+
+  // No change in allocation stats after move
+  EXPECT_EQ(AllocationStats::allocation_count(), 1);
+  EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
+  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
 }
 
 TEST_F(SmallVectorTest, MoveConstructorWithStaticMemoryAndStatefulAllocator) {
@@ -388,64 +378,59 @@ TEST_F(SmallVectorTest, MoveConstructorWithStaticMemoryAndStatefulAllocator) {
 
   // No allocations should occur for static memory
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_allocated(), 0);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, MoveConstructorWithDynamicMemoryAndStatefulAllocator) {
-  {
-    jacl::small_vector<int, 4, alloc_stateful_int_t> original{};
-    fill_with_random_data(original, 6);
-    auto original_allocator_id = original.get_allocator().get_id();
+  jacl::small_vector<int, 4, alloc_stateful_int_t> original{};
+  fill_with_random_data(original, 6);
+  auto original_allocator_id = original.get_allocator().get_id();
 
-    // Allocations should occur for dynamic memory
-    EXPECT_EQ(AllocationStats::allocation_count(), 1);
-    EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-    EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-    EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-    EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
-
-    std::vector<int> original_copy(original.begin(), original.end());
-    jacl::small_vector<int, 4, alloc_stateful_int_t> moved(std::move(original));
-    EXPECT_EQ(moved.size(), 6);
-    EXPECT_GT(moved.capacity(), 4);
-    EXPECT_TRUE(original.empty());
-    EXPECT_EQ(moved.get_allocator().get_id(), original_allocator_id);
-    EXPECT_NE(moved.get_allocator(), original.get_allocator());
-    for(std::size_t i = 0; i < moved.size(); ++i) { EXPECT_EQ(moved[i], original_copy[i]); }
-
-    // No change in allocation stats after move - memory ownership transferred
-    EXPECT_EQ(AllocationStats::allocation_count(), 1);
-    EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-    EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-    EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-    EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
-  }
-
-  // Memory should be deallocated when moved vector is destroyed
+  // Allocations should occur for dynamic memory
   EXPECT_EQ(AllocationStats::allocation_count(), 1);
   EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
-  EXPECT_EQ(AllocationStats::deallocation_count(), 1);
-  EXPECT_GE(AllocationStats::total_deallocated(), 6 * sizeof(int));
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
+  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
+
+  std::vector<int> original_copy(original.begin(), original.end());
+  jacl::small_vector<int, 4, alloc_stateful_int_t> moved(std::move(original));
+  EXPECT_EQ(moved.size(), 6);
+  EXPECT_GT(moved.capacity(), 4);
+  EXPECT_TRUE(original.empty());
+  EXPECT_EQ(moved.get_allocator().get_id(), original_allocator_id);
+  EXPECT_NE(moved.get_allocator(), original.get_allocator());
+  for(std::size_t i = 0; i < moved.size(); ++i) { EXPECT_EQ(moved[i], original_copy[i]); }
+
+  // No change in allocation stats after move - memory ownership transferred
+  EXPECT_EQ(AllocationStats::allocation_count(), 1);
+  EXPECT_GE(AllocationStats::total_allocated(), 6 * sizeof(int));
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
+  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
 }
 
 TEST_F(SmallVectorTest, ValueConstructorWithStaticMemory) {
-  jacl::small_vector<int, 4> vec(4ull, 42);
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec(4ull, 42);
   EXPECT_EQ(vec.size(), 4);
   EXPECT_EQ(vec.capacity(), 4);
   EXPECT_FALSE(vec.empty());
   for(const auto& elem : vec) { EXPECT_EQ(elem, 42); }
+
+  EXPECT_EQ(AllocationStats::allocation_count(), 0);
 }
 
 TEST_F(SmallVectorTest, ValueConstructorWithDynamicMemory) {
-  jacl::small_vector<int, 4> vec(6ull, 42);
-  EXPECT_EQ(vec.size(), 6);
-  EXPECT_GT(vec.capacity(), 4);
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec(12ull, 42);
+  EXPECT_EQ(vec.size(), 12);
+  EXPECT_GE(vec.capacity(), 12);
   EXPECT_FALSE(vec.empty());
   for(const auto& elem : vec) { EXPECT_EQ(elem, 42); }
+
+  EXPECT_EQ(AllocationStats::allocation_count(), 1);
+  EXPECT_GE(AllocationStats::total_allocated(), 12 * sizeof(int));
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
+  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
 }
 
 TEST_F(SmallVectorTest, ValueConstructorWithStaticMemoryAndAllocator) {
@@ -533,20 +518,42 @@ TEST_F(SmallVectorTest, IteratorConstructorWithArrayPointers) {
 }
 
 TEST_F(SmallVectorTest, BidiIteratorConstructorWithArrayPointers) {
-  std::list<int> list{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
-  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec(list.begin(), list.end());
+  // Compute expected allocation count, capacity, and allocated size
+  // for the expected growth rate of the small vector.
+  // Growth rate is (capacity += capacity/2 + 1)
+  constexpr size_t static_capacity = 4;
+  size_t expected_allocation_count = 0;
+  size_t expected_capacity         = static_capacity;
+  size_t expected_allocated        = 0;
+  while(expected_capacity < 10) {
+    ++expected_allocation_count;
+    expected_capacity  += expected_capacity / 2 + 1;
+    expected_allocated += expected_capacity * sizeof(int);
+  }
 
-  EXPECT_GT(AllocationStats::allocation_count(), 1);
-  EXPECT_GE(AllocationStats::total_allocated(), 10 * sizeof(int));
-  EXPECT_GT(AllocationStats::deallocation_count(), 0);
-  EXPECT_GT(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
+  {
+    std::list<int> list{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
+    jacl::small_vector<int, static_capacity, alloc_nonstateful_int_t> vec(list.begin(), list.end());
 
-  EXPECT_EQ(vec.size(), 10);
-  EXPECT_GE(vec.capacity(), 10);
-  EXPECT_FALSE(vec.empty());
-  std::size_t i = 0;
-  for(auto it = list.begin(); it != list.end(); ++it, ++i) { EXPECT_EQ(vec[i], *it); }
+    EXPECT_EQ(AllocationStats::allocation_count(), expected_allocation_count);
+    EXPECT_EQ(AllocationStats::total_allocated(), expected_allocated);
+    EXPECT_EQ(AllocationStats::deallocation_count(), expected_allocation_count - 1);
+    EXPECT_EQ(
+        AllocationStats::total_deallocated(), expected_allocated - expected_capacity * sizeof(int));
+    EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
+
+    EXPECT_EQ(vec.size(), 10);
+    EXPECT_GE(vec.capacity(), 10);
+    EXPECT_FALSE(vec.empty());
+    std::size_t i = 0;
+    for(auto it = list.begin(); it != list.end(); ++it, ++i) { EXPECT_EQ(vec[i], *it); }
+  }
+
+  EXPECT_EQ(AllocationStats::allocation_count(), expected_allocation_count);
+  EXPECT_EQ(AllocationStats::total_allocated(), expected_allocated);
+  EXPECT_EQ(AllocationStats::deallocation_count(), expected_allocation_count);
+  EXPECT_EQ(AllocationStats::total_deallocated(), expected_allocated);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, InitializerListConstructorEmpty) {
@@ -563,25 +570,16 @@ TEST_F(SmallVectorTest, InitializerListConstructorEmpty) {
 }
 
 TEST_F(SmallVectorTest, InitializerListConstructorWithDynamicMemory) {
-  {
-    jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec{1, 2, 3, 4, 5, 6, 7, 8};
-    EXPECT_EQ(vec.size(), 8);
-    EXPECT_GE(vec.capacity(), 8);
-    EXPECT_FALSE(vec.empty());
-    for(std::size_t i = 0; i < 8; ++i) { EXPECT_EQ(vec[i], static_cast<int>(i + 1)); }
-
-    EXPECT_EQ(AllocationStats::allocation_count(), 1);
-    EXPECT_GE(AllocationStats::total_allocated(), 8 * sizeof(int));
-    EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-    EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-    EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
-  }
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec{1, 2, 3, 4, 5, 6, 7, 8};
+  EXPECT_EQ(vec.size(), 8);
+  EXPECT_GE(vec.capacity(), 8);
+  EXPECT_FALSE(vec.empty());
+  for(std::size_t i = 0; i < 8; ++i) { EXPECT_EQ(vec[i], static_cast<int>(i + 1)); }
 
   EXPECT_EQ(AllocationStats::allocation_count(), 1);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 1);
   EXPECT_GE(AllocationStats::total_allocated(), 8 * sizeof(int));
-  EXPECT_GE(AllocationStats::total_deallocated(), 8 * sizeof(int));
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
 }
 
 TEST_F(SmallVectorTest, CopyAssignmentWithStaticToStaticMemory) {
@@ -594,10 +592,6 @@ TEST_F(SmallVectorTest, CopyAssignmentWithStaticToStaticMemory) {
   for(std::size_t i = 0; i < 3; ++i) { EXPECT_EQ(vec2[i], vec1[i]); }
 
   EXPECT_EQ(AllocationStats::allocation_count(), 0);
-  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
-  EXPECT_EQ(AllocationStats::total_allocated(), 0);
-  EXPECT_EQ(AllocationStats::total_deallocated(), 0);
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
 }
 
 TEST_F(SmallVectorTest, CopyAssignmentWithStaticToDynamicMemory) {
@@ -624,6 +618,7 @@ TEST_F(SmallVectorTest, CopyAssignmentWithDynamicToDynamicMemorySmallToLarge) {
 
   // Both vectors have dynamic memory
   EXPECT_EQ(AllocationStats::allocation_count(), 2);
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
   EXPECT_EQ(AllocationStats::outstanding_allocations(), 2);
 
   vec2 = vec1;
@@ -633,7 +628,9 @@ TEST_F(SmallVectorTest, CopyAssignmentWithDynamicToDynamicMemorySmallToLarge) {
 
   // vec2 should reuse its existing allocation if it has sufficient capacity,
   // or allocate new memory if needed
-  EXPECT_GE(AllocationStats::allocation_count(), 2);
+  EXPECT_EQ(AllocationStats::allocation_count(), 2);
+  EXPECT_EQ(AllocationStats::total_allocated(), (6 + 8) * sizeof(int));
+  EXPECT_EQ(AllocationStats::deallocation_count(), 0);
   EXPECT_EQ(AllocationStats::outstanding_allocations(), 2);
 }
 
@@ -652,8 +649,10 @@ TEST_F(SmallVectorTest, CopyAssignmentWithDynamicToDynamicMemoryLargeToSmall) {
 
   // vec2 should allocate new memory to hold larger data
   EXPECT_EQ(AllocationStats::allocation_count(), 3); // One for vec2, one for vec1, one for new data
-  EXPECT_EQ(AllocationStats::deallocation_count(), 1);      // One deallocation for old vec2 memory
-  EXPECT_EQ(AllocationStats::outstanding_allocations(), 2); // vec1 and new vec2 memory
+  EXPECT_EQ(AllocationStats::total_allocated(), (6 + 8 + 8) * sizeof(int));
+  EXPECT_EQ(AllocationStats::deallocation_count(), 1); // One deallocation for old vec2 memory
+  EXPECT_EQ(AllocationStats::total_deallocated(), 6 * sizeof(int)); // Old vec2 memory
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 2);         // vec1 and new vec2 memory
 }
 
 TEST_F(SmallVectorTest, CopyAssignmentWithDynamicToStaticMemory) {
@@ -671,6 +670,7 @@ TEST_F(SmallVectorTest, CopyAssignmentWithDynamicToStaticMemory) {
 
   // New allocation should occur for vec2 to hold dynamic data
   EXPECT_EQ(AllocationStats::allocation_count(), 2);
+  EXPECT_EQ(AllocationStats::total_allocated(), (6 + 6) * sizeof(int));
   EXPECT_EQ(AllocationStats::deallocation_count(), 0);
   EXPECT_EQ(AllocationStats::outstanding_allocations(), 2);
 }
@@ -699,6 +699,7 @@ TEST_F(SmallVectorTest, MoveAssignmentWithStaticToDynamicMemory) {
 
   // One deallocation should occur (vec2's original memory)
   EXPECT_EQ(AllocationStats::allocation_count(), 1);
+  EXPECT_EQ(AllocationStats::total_allocated(), 7 * sizeof(int));
   EXPECT_EQ(AllocationStats::deallocation_count(), 0);
   EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
 }
@@ -723,6 +724,7 @@ TEST_F(SmallVectorTest, MoveAssignmentWithDynamicToStaticMemory) {
 
   // No deallocation should occur since vec2 is static memory
   EXPECT_EQ(AllocationStats::allocation_count(), 1);
+  EXPECT_EQ(AllocationStats::total_allocated(), 6 * sizeof(int));
   EXPECT_EQ(AllocationStats::deallocation_count(), 0);
   EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
 }
@@ -1074,4 +1076,210 @@ TEST_F(SmallVectorTest, Reserve) {
     EXPECT_EQ(AllocationStats::deallocation_count(), cur_dealloc_count);
     EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
   }
+}
+
+TEST_F(SmallVectorTest, PushBackMoveSemantics) {
+  {
+    jacl::small_vector<std::unique_ptr<int>, 4, alloc_nonstateful_int_ptr_t> vec;
+
+    for(int i = 1; i <= 4; ++i) {
+      auto ptr = std::make_unique<int>(i);
+      vec.push_back(std::move(ptr));
+      EXPECT_EQ(vec.size(), static_cast<std::size_t>(i));
+      EXPECT_EQ(vec.capacity(), 4);
+      EXPECT_EQ(*vec[i - 1], i);
+      EXPECT_EQ(ptr, nullptr); // Moved from
+    }
+
+    EXPECT_EQ(AllocationStats::allocation_count(), 0);
+    EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
+
+    // Push back more elements to trigger growth
+    for(int i = 5; i <= 10; ++i) {
+      size_t total_allocated   = AllocationStats::total_allocated();
+      size_t total_deallocated = AllocationStats::total_deallocated();
+      size_t alloc_count       = AllocationStats::allocation_count();
+      size_t dealloc_count     = AllocationStats::deallocation_count();
+
+      size_t cur_capacity = vec.capacity();
+      auto ptr            = std::make_unique<int>(i);
+      vec.push_back(std::move(ptr));
+
+      if(vec.size() > cur_capacity) {
+        EXPECT_GT(vec.capacity(), cur_capacity);
+        EXPECT_EQ(AllocationStats::allocation_count(), alloc_count + 1);
+        EXPECT_EQ(AllocationStats::deallocation_count(),
+            dealloc_count + (alloc_count > 0 ? 1 : 0)); // One deallocation if reallocating
+        EXPECT_EQ(AllocationStats::total_allocated(),
+            total_allocated + vec.capacity() * sizeof(std::unique_ptr<int>));
+        EXPECT_EQ(AllocationStats::total_deallocated(),
+            total_deallocated +
+                (alloc_count > 0 ? cur_capacity * sizeof(std::unique_ptr<int>) : 0));
+      }
+      EXPECT_EQ(vec.size(), static_cast<std::size_t>(i));
+      EXPECT_EQ(*vec[i - 1], i);
+      EXPECT_EQ(ptr, nullptr); // Moved from
+
+      EXPECT_EQ(AllocationStats::outstanding_allocations(), 1);
+    }
+  }
+
+  EXPECT_EQ(AllocationStats::outstanding_allocations(), 0);
+}
+
+TEST_F(SmallVectorTest, EmplaceBackReturnValue) {
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec;
+
+  for(int i = 1; i <= 4; ++i) {
+    int& ref = vec.emplace_back(i);
+    EXPECT_EQ(ref, i);
+    EXPECT_EQ(&ref, &vec.back());
+    EXPECT_EQ(vec.size(), static_cast<std::size_t>(i));
+  }
+
+  // Test with dynamic memory allocation
+  for(int i = 5; i <= 10; ++i) {
+    int& ref = vec.emplace_back(i);
+    EXPECT_EQ(ref, i);
+    EXPECT_EQ(&ref, &vec.back());
+    EXPECT_EQ(vec.size(), static_cast<std::size_t>(i));
+  }
+}
+
+TEST_F(SmallVectorTest, PushBackCopySemantics) {
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec;
+
+  for(int i = 1; i <= 4; ++i) {
+    int value = i;
+    vec.push_back(value);
+    EXPECT_EQ(vec.size(), static_cast<std::size_t>(i));
+    EXPECT_EQ(vec.capacity(), 4);
+    EXPECT_EQ(vec[i - 1], i);
+    EXPECT_EQ(value, i); // Original value unchanged
+  }
+
+  // Test reallocation behavior
+  int value           = 42;
+  size_t old_capacity = vec.capacity();
+  vec.push_back(value);
+  EXPECT_GT(vec.capacity(), old_capacity);
+  EXPECT_EQ(vec.back(), 42);
+  EXPECT_EQ(value, 42); // Original value unchanged
+}
+
+TEST_F(SmallVectorTest, EmplaceBackWithMultipleArgs) {
+  struct TestStruct {
+    int a, b, c;
+    TestStruct(int x, int y, int z) : a(x), b(y), c(z) {}
+    bool operator==(const TestStruct& other) const {
+      return a == other.a && b == other.b && c == other.c;
+    }
+  };
+
+  jacl::small_vector<TestStruct, 2, MockAllocator<TestStruct, NonstatefulPolicy>> vec;
+
+  vec.emplace_back(1, 2, 3);
+  EXPECT_EQ(vec.size(), 1);
+  EXPECT_EQ(vec[0].a, 1);
+  EXPECT_EQ(vec[0].b, 2);
+  EXPECT_EQ(vec[0].c, 3);
+
+  vec.emplace_back(4, 5, 6);
+  EXPECT_EQ(vec.size(), 2);
+  EXPECT_EQ(vec[1].a, 4);
+  EXPECT_EQ(vec[1].b, 5);
+  EXPECT_EQ(vec[1].c, 6);
+
+  // Test with dynamic allocation
+  vec.emplace_back(7, 8, 9);
+  EXPECT_EQ(vec.size(), 3);
+  EXPECT_GT(vec.capacity(), 2);
+  EXPECT_EQ(vec[2].a, 7);
+  EXPECT_EQ(vec[2].b, 8);
+  EXPECT_EQ(vec[2].c, 9);
+}
+
+TEST_F(SmallVectorTest, PushBackSelfReference) {
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec{1, 2, 3};
+
+  // Push back a reference to an existing element
+  vec.push_back(vec[0]);
+  EXPECT_EQ(vec.size(), 4);
+  EXPECT_EQ(vec[3], 1);
+  EXPECT_EQ(vec[0], 1); // Original element unchanged
+
+  // Force reallocation and test self-reference
+  vec.push_back(vec[1]);
+  EXPECT_EQ(vec.size(), 5);
+  EXPECT_GT(vec.capacity(), 4);
+  EXPECT_EQ(vec[4], 2);
+  EXPECT_EQ(vec[1], 2); // Original element unchanged
+}
+
+TEST_F(SmallVectorTest, EmplaceBackSelfReference) {
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec{10, 20, 30};
+
+  // Emplace back using a reference to an existing element
+  vec.emplace_back(vec[0]);
+  EXPECT_EQ(vec.size(), 4);
+  EXPECT_EQ(vec[3], 10);
+
+  // Force reallocation and test self-reference
+  vec.emplace_back(vec[1]);
+  EXPECT_EQ(vec.size(), 5);
+  EXPECT_GT(vec.capacity(), 4);
+  EXPECT_EQ(vec[4], 20);
+}
+
+TEST_F(SmallVectorTest, PushBackEmptyVector) {
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec;
+  EXPECT_TRUE(vec.empty());
+
+  vec.push_back(42);
+  EXPECT_FALSE(vec.empty());
+  EXPECT_EQ(vec.size(), 1);
+  EXPECT_EQ(vec[0], 42);
+  EXPECT_EQ(vec.front(), 42);
+  EXPECT_EQ(vec.back(), 42);
+}
+
+TEST_F(SmallVectorTest, EmplaceBackEmptyVector) {
+  jacl::small_vector<int, 4, alloc_nonstateful_int_t> vec;
+  EXPECT_TRUE(vec.empty());
+
+  int& ref = vec.emplace_back(99);
+  EXPECT_FALSE(vec.empty());
+  EXPECT_EQ(vec.size(), 1);
+  EXPECT_EQ(vec[0], 99);
+  EXPECT_EQ(ref, 99);
+  EXPECT_EQ(&ref, &vec[0]);
+}
+
+TEST_F(SmallVectorTest, PushBackCapacityGrowth) {
+  jacl::small_vector<int, 2, alloc_nonstateful_int_t> vec;
+
+  // Fill initial capacity
+  vec.push_back(1);
+  vec.push_back(2);
+  EXPECT_EQ(vec.size(), 2);
+  EXPECT_EQ(vec.capacity(), 2);
+  EXPECT_EQ(AllocationStats::allocation_count(), 0);
+
+  // Trigger first growth
+  vec.push_back(3);
+  EXPECT_EQ(vec.size(), 3);
+  EXPECT_GT(vec.capacity(), 2);
+  size_t first_growth = vec.capacity();
+  EXPECT_EQ(AllocationStats::allocation_count(), 1);
+
+  // Fill to capacity again
+  while(vec.size() < vec.capacity()) { vec.push_back(static_cast<int>(vec.size() + 1)); }
+
+  size_t pre_growth_count = AllocationStats::allocation_count();
+
+  // Trigger second growth
+  vec.push_back(static_cast<int>(vec.size() + 1));
+  EXPECT_GT(vec.capacity(), first_growth);
+  EXPECT_EQ(AllocationStats::allocation_count(), pre_growth_count + 1);
+  EXPECT_EQ(AllocationStats::deallocation_count(), pre_growth_count);
 }
