@@ -954,11 +954,8 @@ public:
       // Swap the elements in the inline data. `l_size` <= `r_size`:
       //   l: [0, ..., l_size)
       //   r: [0, ..., l_size, ..., r_size)
-      for(; l_first != l_last; ++l_first, ++r_first) std::swap(*l_first, *r_first);
-      for(; r_first != r_last; ++r_first, ++l_first) {
-        construct_at(l_first, std::move(*r_first));
-        destroy_at(r_first);
-      }
+      auto r_it = std::swap_ranges(l_first, l_last, r_first);
+      move_data(l_last, r_it, r_last - r_it);
 
       std::swap(l.size_, r.size_);
     };
@@ -969,8 +966,8 @@ public:
       const auto l_size     = l.size_;
       const auto l_capacity = l.capacity_;
 
+      move_data(l.inline_data_, r.data_, r.size_);
       l.data_ = reinterpret_cast<pointer>(l.inline_data_);
-      for(size_type i = 0; i < l_size; ++i) construct_at(l.data_ + i, std::move(r.data_[i]));
       l.size_ = other.size_;
 
       r.data_     = l_data;
